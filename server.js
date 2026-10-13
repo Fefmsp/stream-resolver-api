@@ -1,73 +1,41 @@
 const express = require('express');
 const cors = require('cors');
-const { chromium } = require('playwright');
+const { exec } = require('child_process');
 
 const app = express();
 app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-app.get('/api/resolve', async (req, res) => {
+app.get('/api/resolve', (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) {
         return res.status(400).json({ error: 'Paramètre "url" manquant' });
     }
 
-    let browser;
-    try {
-        // Lancer Playwright avec les arguments requis pour les environnements cloud (Render)
-        browser = await chromium.launch({ 
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
-            ]
-        });
+    // L'option -g (ou --get-url) demande à yt-dlp de retourner uniquement l'URL directe du flux
+    const command = `yt-dlp -g "${targetUrl}"`;
 
-        const context = await browser.newContext();
-        const page = await context.newPage();
-
-        let resolvedStreamUrl = null;
-
-        // Intercepter les requêtes réseau pour capturer le flux (.m3u8 ou .mpd)
-        page.on('request', request => {
-            const url = request.url();
-            if ((url.includes('.m3u8') || url.includes('.mpd')) && !resolvedStreamUrl) {
-                resolvedStreamUrl = url;
-            }
-        });
-
-        // Aller sur la page cible
-        await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
-
-        // Tenter de cliquer sur le bouton de lecture de la page si présent
-        try {
-            await page.click('.vjs-big-play-button, #player, .play-button, video', { timeout: 5000 });
-        } catch (e) {
-            // Ignorer si le bouton n'est pas trouvé
+    exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
+        if (error) {
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Impossible de résoudre le flux avec yt-dlp',
+                details: stderr || error.message 
+            });
         }
 
-        // Laisser un court délai pour capturer le flux déclenché
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // yt-dlp peut retourner plusieurs lignes (ex: audio et vidéo séparés), on prend la première (le flux principal)
+        const streamUrl = stdout.trim().split('\n')[0];
 
-        await browser.close();
-
-        if (resolvedStreamUrl) {
-            return res.json({ success: true, url: resolvedStreamUrl });
+        if (streamUrl && streamUrl.startsWith('http')) {
+            return res.json({ success: true, url: streamUrl });
         } else {
-            return res.status(404).json({ success: false, error: 'Flux introuvable' });
+            return res.status(404).json({ success: false, error: 'Aucun flux m3u8 valide trouvé' });
         }
-
-    } catch (error) {
-        if (browser) {
-            try { await browser.close(); } catch (err) {}
-        }
-        return res.status(500).json({ success: false, error: error.message });
-    }
+    });
 });
 
 app.listen(PORT, () => {
-    console.log(`Serveur Playwright démarré sur le port ${PORT}`);
+    console.log(`Serveur yt-dlp démarré sur le port ${PORT}`);
 });
