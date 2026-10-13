@@ -15,14 +15,23 @@ app.get('/api/resolve', async (req, res) => {
 
     let browser;
     try {
-        // Lancer le navigateur Chromium via Playwright
-        browser = await chromium.launch({ headless: true });
+        // Lancer Playwright avec les arguments requis pour les environnements cloud (Render)
+        browser = await chromium.launch({ 
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ]
+        });
+
         const context = await browser.newContext();
         const page = await context.newPage();
 
         let resolvedStreamUrl = null;
 
-        // Intercepter les requêtes réseau pour capturer le m3u8 ou mpd
+        // Intercepter les requêtes réseau pour capturer le flux (.m3u8 ou .mpd)
         page.on('request', request => {
             const url = request.url();
             if ((url.includes('.m3u8') || url.includes('.mpd')) && !resolvedStreamUrl) {
@@ -33,7 +42,7 @@ app.get('/api/resolve', async (req, res) => {
         // Aller sur la page cible
         await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
 
-        // Tenter de cliquer sur le bouton de lecture de la page
+        // Tenter de cliquer sur le bouton de lecture de la page si présent
         try {
             await page.click('.vjs-big-play-button, #player, .play-button, video', { timeout: 5000 });
         } catch (e) {
@@ -52,7 +61,9 @@ app.get('/api/resolve', async (req, res) => {
         }
 
     } catch (error) {
-        if (browser) await browser.close();
+        if (browser) {
+            try { await browser.close(); } catch (err) {}
+        }
         return res.status(500).json({ success: false, error: error.message });
     }
 });
