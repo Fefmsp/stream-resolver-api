@@ -74,7 +74,7 @@ app.get('/api/resolve', async (req, res) => {
     }
 });
 
-// 2. Endpoint Proxy (avec réécriture automatique des liens .m3u8 et des segments)
+// 2. Endpoint Proxy (avec correction de la réécriture m3u8 pour éviter les boucles)
 app.get('/api/proxy', async (req, res) => {
     const videoUrl = req.query.url;
     if (!videoUrl) {
@@ -110,24 +110,34 @@ app.get('/api/proxy', async (req, res) => {
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', '*');
 
-        // Si c'est un fichier de playlist (.m3u8), on réécrit chaque ligne de segment
+        // Traitement sécurisé des fichiers .m3u8 (playlists et segments)
         if (contentType.includes('mpegurl') || videoUrl.includes('.m3u8')) {
             let m3u8Content = await response.text();
             const baseUrl = new URL(videoUrl);
 
             m3u8Content = m3u8Content.split('\n').map(line => {
                 line = line.trim();
-                if (line && !line.startsWith('#')) {
-                    const absoluteSegmentUrl = new URL(line, baseUrl.href).toString();
-                    return `https://stream-resolver-api-1.onrender.com/api/proxy?url=${encodeURIComponent(absoluteSegmentUrl)}`;
+                // Ignorer les lignes vides ou les balises de métadonnées HLS (commençant par #)
+                if (!line || line.startsWith('#')) {
+                    return line;
                 }
-                return line;
+
+                try {
+                    const absoluteSegmentUrl = new URL(line, baseUrl.href).toString();
+                    // Éviter d'encapsuler si l'URL passe déjà par le proxy
+                    if (absoluteSegmentUrl.includes('/api/proxy')) {
+                        return line;
+                    }
+                    return `https://stream-resolver-api-1.onrender.com/api/proxy?url=${encodeURIComponent(absoluteSegmentUrl)}`;
+                } catch (e) {
+                    return line;
+                }
             }).join('\n');
 
             return res.send(m3u8Content);
         }
 
-        // Sinon, on renvoie les données binaires du segment vidéo brut
+        // Pour les segments vidéo binaires (.ts, .m4s, etc.)
         const arrayBuffer = await response.arrayBuffer();
         res.send(Buffer.from(arrayBuffer));
     } catch (err) {
