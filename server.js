@@ -3,7 +3,6 @@ const cors = require('cors');
 const puppeteer = require('puppeteer');
 
 const app = express();
-
 app.use(cors());
 
 const PORT = process.env.PORT || 3000;
@@ -16,10 +15,8 @@ app.get('/api/resolve', async (req, res) => {
 
     let browser;
     try {
-        // Lancer Puppeteer avec les options adaptées aux environnements cloud (Render)
         browser = await puppeteer.launch({
             headless: true,
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, // Utilise le chemin système si défini par Render
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -30,7 +27,6 @@ app.get('/api/resolve', async (req, res) => {
         });
 
         const page = await browser.newPage();
-        
         let resolvedStreamUrl = null;
 
         await page.setRequestInterception(true);
@@ -52,7 +48,6 @@ app.get('/api/resolve', async (req, res) => {
         }
 
         await new Promise(resolve => setTimeout(resolve, 3000));
-
         await browser.close();
 
         if (resolvedStreamUrl) {
