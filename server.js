@@ -3,7 +3,23 @@ const puppeteer = require('puppeteer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const express = require('express');
+const cors = require('cors'); // <--- 1. Importer cors
+const puppeteer = require('puppeteer');
 
+const app = express();
+
+app.use(cors()); // <--- 2. Activer CORS pour autoriser les requêtes externes
+
+const PORT = process.env.PORT || 3000;
+
+app.get('/api/resolve', async (req, res) => {
+    // ... (reste de votre code inchangé)
+});
+
+app.listen(PORT, () => {
+    console.log(`Serveur démarré sur le port ${PORT}`);
+});
 app.get('/api/resolve', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) {
