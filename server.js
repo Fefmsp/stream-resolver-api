@@ -13,14 +13,14 @@ app.get('/api/resolve', (req, res) => {
         return res.status(400).json({ error: 'Paramètre "url" manquant' });
     }
 
-    // Ajout des options pour contourner la protection et récupérer directement le lien master.m3u8 ou index.m3u8
     const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
     
-    // Commande yt-dlp avec user-agent et referer
+    // Commande yt-dlp avec les options de contournement et -g pour récupérer l'URL brute du flux
     const command = `yt-dlp --no-part --user-agent "${userAgent}" --referer "https://vidzy.cc/" -g "${targetUrl}"`;
 
     exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
         if (error) {
+            console.error("Erreur yt-dlp détaillée:", stderr);
             return res.status(500).json({ 
                 success: false, 
                 error: 'Impossible de résoudre le flux avec yt-dlp',
