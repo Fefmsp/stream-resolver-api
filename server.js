@@ -74,7 +74,7 @@ app.get('/api/resolve', async (req, res) => {
     }
 });
 
-// 2. Endpoint Proxy (pour contourner le CORS de Vidzy sur les fichiers .m3u8 et segments)
+// 2. Endpoint Proxy (avec réécriture automatique des liens .m3u8 et des segments)
 app.get('/api/proxy', async (req, res) => {
     const videoUrl = req.query.url;
     if (!videoUrl) {
@@ -87,15 +87,13 @@ app.get('/api/proxy', async (req, res) => {
             'Referer': 'https://vidzy.org/'
         };
 
-        // Transmettre l'en-tête Range s'il est présent (utile pour le seek/chargement des morceaux vidéo)
         if (req.headers.range) {
             fetchHeaders['Range'] = req.headers.range;
         }
 
         const response = await fetch(videoUrl, { headers: fetchHeaders });
 
-        // Copier les en-têtes utiles de la réponse distante
-        const contentType = response.headers.get('content-type');
+        const contentType = response.headers.get('content-type') || '';
         if (contentType) res.setHeader('Content-Type', contentType);
         
         const contentLength = response.headers.get('content-length');
@@ -108,11 +106,28 @@ app.get('/api/proxy', async (req, res) => {
             res.status(206);
         }
 
-        // Forcer les en-têtes CORS pour autoriser l'accès depuis Cloudflare Workers
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', '*');
 
+        // Si c'est un fichier de playlist (.m3u8), on réécrit chaque ligne de segment
+        if (contentType.includes('mpegurl') || videoUrl.includes('.m3u8')) {
+            let m3u8Content = await response.text();
+            const baseUrl = new URL(videoUrl);
+
+            m3u8Content = m3u8Content.split('\n').map(line => {
+                line = line.trim();
+                if (line && !line.startsWith('#')) {
+                    const absoluteSegmentUrl = new URL(line, baseUrl.href).toString();
+                    return `https://stream-resolver-api-1.onrender.com/api/proxy?url=${encodeURIComponent(absoluteSegmentUrl)}`;
+                }
+                return line;
+            }).join('\n');
+
+            return res.send(m3u8Content);
+        }
+
+        // Sinon, on renvoie les données binaires du segment vidéo brut
         const arrayBuffer = await response.arrayBuffer();
         res.send(Buffer.from(arrayBuffer));
     } catch (err) {
