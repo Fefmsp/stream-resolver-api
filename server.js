@@ -1,6 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const puppeteer = require('puppeteer');
+const path = require('path');
+
+// Force le cache de Puppeteer dans le dossier du projet
+process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.cache', 'puppeteer');
 
 const app = express();
 app.use(cors());
