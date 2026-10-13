@@ -13,8 +13,11 @@ app.get('/api/resolve', (req, res) => {
         return res.status(400).json({ error: 'Paramètre "url" manquant' });
     }
 
-    // L'option -g (ou --get-url) demande à yt-dlp de retourner uniquement l'URL directe du flux
-    const command = `yt-dlp -g "${targetUrl}"`;
+    // Ajout des options pour contourner la protection et récupérer directement le lien master.m3u8 ou index.m3u8
+    const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+    
+    // Commande yt-dlp avec user-agent et referer
+    const command = `yt-dlp --no-part --user-agent "${userAgent}" --referer "https://vidzy.cc/" -g "${targetUrl}"`;
 
     exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
         if (error) {
@@ -25,7 +28,6 @@ app.get('/api/resolve', (req, res) => {
             });
         }
 
-        // yt-dlp peut retourner plusieurs lignes (ex: audio et vidéo séparés), on prend la première (le flux principal)
         const streamUrl = stdout.trim().split('\n')[0];
 
         if (streamUrl && streamUrl.startsWith('http')) {
