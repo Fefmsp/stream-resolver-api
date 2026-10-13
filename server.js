@@ -1,10 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const puppeteer = require('puppeteer');
-const path = require('path');
-
-// Force le cache de Puppeteer dans le dossier du projet
-process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '.cache', 'puppeteer');
+const { chromium } = require('playwright');
 
 const app = express();
 app.use(cors());
@@ -19,39 +15,34 @@ app.get('/api/resolve', async (req, res) => {
 
     let browser;
     try {
-        browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu'
-            ]
-        });
+        // Lancer le navigateur Chromium via Playwright
+        browser = await chromium.launch({ headless: true });
+        const context = await browser.newContext();
+        const page = await context.newPage();
 
-        const page = await browser.newPage();
         let resolvedStreamUrl = null;
 
-        await page.setRequestInterception(true);
-        page.on('request', interceptedRequest => {
-            const url = interceptedRequest.url();
+        // Intercepter les requêtes réseau pour capturer le m3u8 ou mpd
+        page.on('request', request => {
+            const url = request.url();
             if ((url.includes('.m3u8') || url.includes('.mpd')) && !resolvedStreamUrl) {
                 resolvedStreamUrl = url;
             }
-            interceptedRequest.continue();
         });
 
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        // Aller sur la page cible
+        await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
 
+        // Tenter de cliquer sur le bouton de lecture de la page
         try {
-            await page.waitForSelector('video, .vjs-big-play-button, #player, .play-button', { timeout: 5000 });
-            await page.click('.vjs-big-play-button, #player, .play-button, video').catch(() => {});
+            await page.click('.vjs-big-play-button, #player, .play-button, video', { timeout: 5000 });
         } catch (e) {
-            // Ignorer si aucun bouton n'est trouvé
+            // Ignorer si le bouton n'est pas trouvé
         }
 
+        // Laisser un court délai pour capturer le flux déclenché
         await new Promise(resolve => setTimeout(resolve, 3000));
+
         await browser.close();
 
         if (resolvedStreamUrl) {
@@ -67,5 +58,5 @@ app.get('/api/resolve', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Serveur démarré sur le port ${PORT}`);
+    console.log(`Serveur Playwright démarré sur le port ${PORT}`);
 });
