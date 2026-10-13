@@ -4,18 +4,18 @@ const puppeteer = require('puppeteer');
 
 const app = express();
 
-// Configuration CORS complète pour autoriser toutes les origines (ou spécificités si besoin)
+// Configuration CORS globale
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Range']
 }));
 
-// Gérer explicitement les requêtes preflight (OPTIONS)
 app.options('*', cors());
 
 const PORT = process.env.PORT || 3000;
 
+// 1. Endpoint de résolution Puppeteer (pour récupérer le lien .m3u8 initial)
 app.get('/api/resolve', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) {
@@ -71,6 +71,53 @@ app.get('/api/resolve', async (req, res) => {
             error: 'Erreur lors de la résolution dynamique',
             details: error.message 
         });
+    }
+});
+
+// 2. Endpoint Proxy (pour contourner le CORS de Vidzy sur les fichiers .m3u8 et segments)
+app.get('/api/proxy', async (req, res) => {
+    const videoUrl = req.query.url;
+    if (!videoUrl) {
+        return res.status(400).send('Paramètre "url" manquant pour le proxy');
+    }
+
+    try {
+        const fetchHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://vidzy.org/'
+        };
+
+        // Transmettre l'en-tête Range s'il est présent (utile pour le seek/chargement des morceaux vidéo)
+        if (req.headers.range) {
+            fetchHeaders['Range'] = req.headers.range;
+        }
+
+        const response = await fetch(videoUrl, { headers: fetchHeaders });
+
+        // Copier les en-têtes utiles de la réponse distante
+        const contentType = response.headers.get('content-type');
+        if (contentType) res.setHeader('Content-Type', contentType);
+        
+        const contentLength = response.headers.get('content-length');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+
+        const contentRange = response.headers.get('content-range');
+        if (contentRange) res.setHeader('Content-Range', contentRange);
+
+        if (response.status === 206) {
+            res.status(206);
+        }
+
+        // Forcer les en-têtes CORS pour autoriser l'accès depuis Cloudflare Workers
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', '*');
+
+        const arrayBuffer = await response.arrayBuffer();
+        res.send(Buffer.from(arrayBuffer));
+    } catch (err) {
+        console.error("Erreur du proxy vidéo :", err);
+        res.status(500).send('Erreur lors du proxy du flux distant');
     }
 });
 
