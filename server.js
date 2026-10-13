@@ -3,7 +3,16 @@ const cors = require('cors');
 const puppeteer = require('puppeteer');
 
 const app = express();
-app.use(cors());
+
+// Configuration CORS complète pour autoriser toutes les origines (ou spécificités si besoin)
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+// Gérer explicitement les requêtes preflight (OPTIONS)
+app.options('*', cors());
 
 const PORT = process.env.PORT || 3000;
 
